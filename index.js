@@ -14,11 +14,14 @@ import {
 
 import {
     messageFormatting,    // 用于格式化消息预览
-    timestampToMoment,    // 用于格式化日期
     openCharacterChat,    // 用于打开特定聊天
     // characters,        // 从 getContext() 获取
     // getRequestHeaders, // 从 getContext() 获取
 } from '../../../../script.js';
+
+import {
+    timestampToMoment,
+} from '../../../utils.js';
 
 const pluginName = 'starK'; // 与文件夹名称一致
 
