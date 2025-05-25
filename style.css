@@ -1,1 +1,46 @@
+/* public/extensions/third-party/starK/style.css */
+#character-last-messages-popup ul {
+    list-style: none;
+    padding: 0;
+}
 
+#character-last-messages-popup li {
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 5px;
+    margin-bottom: 10px;
+    padding: 10px;
+    background-color: var(--SmartThemeBodyBgDarker, rgba(0,0,0,0.1));
+}
+
+#character-last-messages-popup .chat-file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+#character-last-messages-popup .chat-file-name {
+    font-size: 1.1em;
+    color: var(--SmartThemeFg);
+    font-weight: bold;
+}
+
+#character-last-messages-popup .message-meta {
+    font-size: 0.9em;
+    color: var(--SmartThemeFgMuted, #ccc);
+}
+
+#character-last-messages-popup .message-sender {
+     color: var(--SmartThemeFg);
+     font-weight: bold;
+}
+
+#character-last-messages-popup .message-preview-content {
+    padding: 5px 0;
+    margin-left: 10px;
+    border-left: 2px solid var(--SmartThemeAccentColor, #555);
+    padding-left: 10px;
+    word-break: break-word;
+    color: var(--SmartThemeFg);
+    white-space: pre-wrap; /* 保留换行和空格 */
+}
