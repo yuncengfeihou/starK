@@ -20,7 +20,7 @@ import {
     // getRequestHeaders, // 从 getContext() 获取
 } from '../../../../script.js';
 
-const pluginName = 'star'; // 与文件夹名称一致
+const pluginName = 'starK'; // 与文件夹名称一致
 
 // (可以移除所有与当前聊天内收藏相关的函数：ensureFavoritesArrayExists, addFavorite, removeFavoriteById, 等)
 // (可以移除所有与预览模式相关的函数：previewState, setupPreviewUI, restoreNormalChatUI, handlePreviewButtonClick 等)
