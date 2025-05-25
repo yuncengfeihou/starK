@@ -5,7 +5,7 @@
     "author": "Your Name",
     "version": "0.1.0-alpha",
     "description": "A plugin to display the last message of each chat for the current character.",
-    "js": "index.js",
+    "js": "client.js",
     "css": "style.css", 
     "loading_order": 1,
     "requires": [],
