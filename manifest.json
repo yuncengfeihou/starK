@@ -1,12 +1,14 @@
 {
-    "display_name": "starK1.3",
+    "name": "starK3.2",
+    "display_name": "StarK Plugin (Last Messages)",
+    "id": "stark",
+    "author": "Your Name",
+    "version": "0.1.0-alpha",
+    "description": "A plugin to display the last message of each chat for the current character.",
+    "js": "index.js",
+    "css": "style.css", 
     "loading_order": 1,
     "requires": [],
     "optional": [],
-    "js": "index.js",
-    "css": "style.css", 
-    "author": "Your Name",
-    "version": "0.1.0-alpha",
-    "homePage": "",
-    "server_script": "api.js"
+    "homePage": ""
 }
