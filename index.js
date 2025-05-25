@@ -1,6 +1,6 @@
 // public/extensions/third-party/starK/index.js (服务器端脚本)
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';   
 // 注意：这里不再需要 import express from 'express'; 因为 router 是被传入的
 
 // 插件信息 - 必须与 manifest.json 中的 id 匹配或相关
