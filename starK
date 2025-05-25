@@ -1,0 +1,12 @@
+{
+    "display_name": "starK1.0",
+    "loading_order": 1,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css", 
+    "author": "Your Name",
+    "version": "0.1.0-alpha",
+    "homePage": "",
+    "server_script": "api.js"
+}
