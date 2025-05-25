@@ -18,23 +18,57 @@ import {
     timestampToMoment,
 } from '../../../utils.js';
 
-// 这个名字应该与你的插件文件夹名称完全一致
-const pluginFolderName = 'starK';
-// 这个ID应该与你的 manifest.json 文件中的 "id" 字段完全一致
-const pluginManifestId = 'stark'; // 重要：确保与 manifest.json 中的 "id" 匹配
+
+const pluginFolderName = 'starK'; // 与插件文件夹名称一致
+const localServerPort = 3001; // 与本地服务器配置的端口一致
+let localServerPingedSuccessfully = false; // Track if local server is responsive
 
 /**
- * 调用后端 API 获取当前角色所有聊天的最后一条消息
+ * Pings the local helper server to check if it's running.
  */
-async function fetchCharacterLastMessagesFromServer() {
+async function pingLocalHelperServer() {
+    const pingUrl = `http://127.0.0.1:${localServerPort}/ping-local`;
+    try {
+        const response = await fetch(pingUrl, { method: 'GET' });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                console.log(`[${pluginFolderName}] Local helper server ping successful:`, data.message);
+                localServerPingedSuccessfully = true;
+                return true;
+            }
+        }
+        console.warn(`[${pluginFolderName}] Local helper server ping failed or returned unexpected response. Status: ${response.status}`);
+        localServerPingedSuccessfully = false;
+        return false;
+    } catch (error) {
+        console.warn(`[${pluginFolderName}] Cannot connect to local helper server at ${pingUrl}. Is it running? Error:`, error.message);
+        localServerPingedSuccessfully = false;
+        return false;
+    }
+}
+
+
+/**
+ * 调用本地辅助服务器 API 获取当前角色所有聊天的最后一条消息
+ */
+async function fetchCharacterLastMessagesFromLocalServer() {
     const context = getContext();
     if (!context) {
         toastr.error('无法获取SillyTavern上下文。');
         return null;
     }
 
+    if (!localServerPingedSuccessfully) {
+        const isServerUp = await pingLocalHelperServer();
+        if (!isServerUp) {
+            toastr.error(`插件的本地辅助服务器未运行或无响应。请检查SillyTavern服务器控制台的 '${pluginFolderName}' 插件日志。`);
+            return null;
+        }
+    }
+
     if (context.groupId || context.characterId === undefined) {
-        toastr.info('请先选择一个角色。此功能当前仅支持角色，不支持群组。');
+        toastr.info('请先选择一个角色。此功能当前仅支持角色。');
         return null;
     }
 
@@ -44,49 +78,53 @@ async function fetchCharacterLastMessagesFromServer() {
         return null;
     }
 
-    const apiUrl = `/api/plugins/${pluginManifestId}/get-character-last-messages`;
-
-    console.log(`[${pluginFolderName}] Fetching last messages from: ${apiUrl} for avatar: ${character.avatar}`);
+    const apiUrl = `http://127.0.0.1:${localServerPort}/get-character-last-messages`;
+    console.log(`[${pluginFolderName}] Fetching last messages from local server: ${apiUrl} for avatar: ${character.avatar}`);
 
     try {
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...(context.getRequestHeaders ? context.getRequestHeaders() : {}), // 获取包含 CSRF Token 的 Headers
+                // 不需要SillyTavern的CSRF Token，因为这是对另一个本地服务的直接调用
             },
             body: JSON.stringify({ character_avatar: character.avatar })
         });
 
         if (!response.ok) {
-            let errorMsg = `HTTP error! Status: ${response.status}`;
+            let errorMsg = `本地服务器错误! Status: ${response.status}`;
+            let errorDetails = '';
             try {
-                const errorData = await response.json();
-                errorMsg = errorData.error || errorMsg;
-                console.error(`[${pluginFolderName}] API Error Data:`, errorData);
+                errorDetails = await response.text();
+                console.error(`[${pluginFolderName}] Local Server API Error Details:`, errorDetails);
+                try {
+                    const jsonData = JSON.parse(errorDetails);
+                    errorMsg = jsonData.error || errorMsg;
+                } catch (parseError) {
+                    errorMsg += ` - ${errorDetails.substring(0, 100)}`;
+                }
             } catch (e) {
-                const textError = await response.text();
-                console.error(`[${pluginFolderName}] API Error Text:`, textError);
-                errorMsg += ` - ${textError.substring(0,100)}`;
+                console.error(`[${pluginFolderName}] Error reading error response body from local server:`, e);
             }
             throw new Error(errorMsg);
         }
         const data = await response.json();
         if (!data.success) {
-            throw new Error(data.error || 'API请求未成功，但未返回具体错误信息。');
+            throw new Error(data.error || '本地服务器API请求未成功。');
         }
-        console.log(`[${pluginFolderName}] Successfully fetched last messages:`, data.chatLastMessages);
+        console.log(`[${pluginFolderName}] Successfully fetched last messages from local server:`, data.chatLastMessages);
         return data.chatLastMessages;
     } catch (error) {
-        console.error(`[${pluginFolderName}] 获取角色末尾消息时发生错误:`, error);
+        console.error(`[${pluginFolderName}] 与本地辅助服务器通信时发生错误:`, error);
         toastr.error(`获取角色末尾消息失败: ${error.message}`);
+        localServerPingedSuccessfully = false; // Assume server might be down
         return null;
     }
 }
 
 /**
  * 显示包含角色所有聊天末尾消息的 Popup
- * @param {Array} chatItems - 从后端获取的聊天条目数组
+ * @param {Array|null} chatItems - 从后端获取的聊天条目数组
  */
 function showLastMessagesPopup(chatItems) {
     const context = getContext();
@@ -97,14 +135,16 @@ function showLastMessagesPopup(chatItems) {
     const characterName = context.characters[context.characterId]?.name || '当前角色';
 
     let popupTitle = `${characterName} - 末尾消息`;
-    let contentHtml = `<div id="character-last-messages-popup" style="max-height: 70vh; overflow-y: auto; padding: 10px;">`;
+    let contentHtml = `<div id="character-last-messages-popup">`; // Style applied via CSS
     contentHtml += `<h3>${characterName} - 所有聊天的末尾消息</h3>`;
 
-    if (!chatItems || chatItems.length === 0) {
-        contentHtml += `<p>该角色没有聊天记录，或者未能从服务器获取到任何聊天的最后一条消息。</p>`;
+    if (chatItems === null) { // API call failed or local server issue
+        contentHtml += `<p>获取聊天记录失败。请检查浏览器控制台和SillyTavern服务器控制台的日志。</p>`;
+    } else if (chatItems.length === 0) {
+        contentHtml += `<p>该角色没有聊天记录，或者未能从本地服务器获取到任何聊天的最后一条消息。</p>`;
     } else {
-        contentHtml += `<p style="font-size:0.9em; color: #aaa;">共找到 ${chatItems.length} 个聊天记录。列表按最新消息排序。</p><hr>`;
-        contentHtml += `<ul style="list-style: none; padding: 0;">`;
+        contentHtml += `<p style="font-size:0.9em; color: var(--SmartThemeFgMuted);">共找到 ${chatItems.length} 个聊天记录。列表按最新消息排序。</p><hr>`;
+        contentHtml += `<ul>`;
 
         chatItems.forEach(item => {
             const { chatFileName, lastMessage } = item;
@@ -112,36 +152,29 @@ function showLastMessagesPopup(chatItems) {
             let messagePreview = '(空消息)';
             if (lastMessage.mes) {
                 const tempDiv = document.createElement('div');
-                // 确保 messageFormatting 被正确调用
                 try {
                     tempDiv.innerHTML = messageFormatting(
-                        lastMessage.mes,
-                        sender,
-                        !!lastMessage.is_system, // isSystem
-                        !!lastMessage.is_user,   // isUser
-                        null, // messageId (不需要，只是预览)
-                        {},   // sanitizerOverrides
-                        false // isReasoning
+                        lastMessage.mes, sender, !!lastMessage.is_system,
+                        !!lastMessage.is_user, null, {}, false
                     );
                     messagePreview = tempDiv.textContent || tempDiv.innerText || lastMessage.mes;
                 } catch (e) {
-                    console.warn(`[${pluginFolderName}] Error formatting message preview for ${chatFileName}:`, e);
-                    messagePreview = lastMessage.mes; // Fallback to raw message
+                    messagePreview = lastMessage.mes; // Fallback
                 }
                 messagePreview = messagePreview.substring(0, 150) + (messagePreview.length > 150 ? '...' : '');
             }
             const sendDate = lastMessage.send_date ? timestampToMoment(lastMessage.send_date).format('YYYY-MM-DD HH:mm') : '未知时间';
 
             contentHtml += `
-                <li style="border: 1px solid var(--SmartThemeBorderColor, #444); border-radius: 5px; margin-bottom: 10px; padding: 10px; background-color: var(--SmartThemeBodyBgDarker, rgba(0,0,0,0.1));">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <strong style="font-size: 1.1em; color: var(--SmartThemeFg);" title="聊天文件名: ${chatFileName}">${chatFileName}</strong>
+                <li>
+                    <div class="chat-file-header">
+                        <span class="chat-file-name" title="聊天文件名: ${chatFileName}">${chatFileName}</span>
                         <button class="menu_button open-chat-btn" data-chatfile="${chatFileName}" title="打开此聊天记录" style="font-size: 0.8em; padding: 3px 8px;">打开</button>
                     </div>
-                    <div style="font-size: 0.9em; color: var(--SmartThemeFgMuted, #ccc);">
-                        <strong style="color: var(--SmartThemeFg);" >${sender}</strong> (${sendDate}):
+                    <div class="message-meta">
+                        <span class="message-sender">${sender}</span> (${sendDate}):
                     </div>
-                    <div style="padding: 5px 0; margin-left: 10px; border-left: 2px solid var(--SmartThemeAccentColor, #555); padding-left: 10px; word-break: break-word; color: var(--SmartThemeFg); white-space: pre-wrap;">
+                    <div class="message-preview-content">
                         ${messagePreview.replace(/</g, "<").replace(/>/g, ">")}
                     </div>
                 </li>
@@ -151,84 +184,66 @@ function showLastMessagesPopup(chatItems) {
     }
     contentHtml += `</div>`;
 
-    const popup = new Popup(contentHtml, POPUP_TYPE.TEXT, popupTitle, { // title 参数移到第三个位置
+    const popup = new Popup(contentHtml, POPUP_TYPE.TEXT, popupTitle, {
         wide: true,
         large: true,
-        okButton: true, // "关闭" 按钮
-        allowVerticalScrolling: false
+        okButton: true,
+        allowVerticalScrolling: true // The main popup itself can scroll if content exceeds max-height
     });
 
-    // 事件委托，处理 "打开" 按钮的点击
-    // 确保 popup.content 存在后再绑定事件
     if (popup.content) {
         $(popup.content).on('click', '.open-chat-btn', async function() {
             const chatFileToOpen = $(this).data('chatfile');
             if (chatFileToOpen) {
-                if (popup.close) popup.close(); // 关闭当前popup
+                if (popup.close) popup.close();
                 toastr.info(`正在打开聊天: ${chatFileToOpen}...`);
                 try {
-                    // 确保当前角色上下文没有变化
-                    const currentContext = getContext();
+                    const currentContext = getContext(); // Re-check context
                     if (currentContext.characterId === undefined || currentContext.characters[currentContext.characterId]?.name !== characterName) {
-                        toastr.warning('当前角色已更改，请重新操作。');
-                        console.warn(`[${pluginFolderName}] Character context changed before opening chat.`);
-                        return;
+                        toastr.warning('当前角色已更改，请重新操作。'); return;
                     }
                     await openCharacterChat(chatFileToOpen);
                 } catch (e) {
                     toastr.error(`打开聊天 ${chatFileToOpen} 失败: ${e.message}`);
-                    console.error(`[${pluginFolderName}] 打开聊天时出错:`, e);
                 }
             }
         });
-    } else {
-        console.error(`[${pluginFolderName}] Popup content is not available for event binding.`);
     }
-
     popup.show();
 }
 
-
-/**
- * 主入口函数，在插件加载时执行
- */
 jQuery(async () => {
     try {
-        console.log(`[${pluginFolderName}] 插件 (client.js - 显示角色末尾消息) 加载中...`);
+        console.log(`[${pluginFolderName}] 前端脚本 (client.js) 加载中...`);
 
-        // 注入CSS (如果你的插件有 style.css 并且在 manifest.json 中声明了)
-        // 如果 manifest.json 中 "css": "style.css" 存在且正确，SillyTavern 会自动加载它。
-        // 如果遇到 MIME type 问题，请检查服务器配置或 SillyTavern 如何服务插件静态文件。
+        // 尝试 Ping 本地服务器以尽早知道它是否可用
+        // 不阻塞UI加载，只是预热一下状态
+        pingLocalHelperServer().then(isUp => {
+            if(isUp) toastr.success(`'${pluginFolderName}' 插件的本地助手已连接!`, '', {timeOut: 2000});
+        });
 
-        // 加载并注入 "收藏" 按钮 (input_button.html)
-        try {
-            const inputButtonHtml = await renderExtensionTemplateAsync(`third-party/${pluginFolderName}`, 'input_button');
-            const buttonContainer = $('#data_bank_wand_container');
 
-            if (buttonContainer.length) {
-                buttonContainer.append(inputButtonHtml);
-                console.log(`[${pluginFolderName}] "收藏" (末尾消息) 按钮已添加到 #data_bank_wand_container`);
+        const inputButtonHtml = await renderExtensionTemplateAsync(`third-party/${pluginFolderName}`, 'input_button');
+        const buttonContainer = $('#data_bank_wand_container');
 
-                // 假设 input_button.html 中的按钮ID是 'favorites_button'
-                const buttonId = 'favorites_button';
-                $(document).on('click', `#${buttonId}`, async () => {
-                    console.log(`[${pluginFolderName}] "${buttonId}" 被点击，准备获取角色末尾消息。`);
-                    const chatItems = await fetchCharacterLastMessagesFromServer();
-                    // chatItems 可能为 null (如果出错或用户未选角色) 或空数组 (如果角色无聊天)
-                    if (chatItems !== null) { // 只有在API调用没有直接返回null时才显示popup
-                        showLastMessagesPopup(chatItems);
-                    }
-                });
-            } else {
-                console.warn(`[${pluginFolderName}] 找不到目标容器 #data_bank_wand_container 来添加按钮。按钮可能不会显示。`);
-            }
-        } catch (error) {
-            console.error(`[${pluginFolderName}] 加载或注入 input_button.html 失败:`, error);
+        if (buttonContainer.length) {
+            buttonContainer.append(inputButtonHtml);
+            const buttonId = 'stark_show_last_messages_button'; // 与 input_button.html 中的 ID 一致
+            $(document).on('click', `#${buttonId}`, async () => {
+                console.log(`[${pluginFolderName}] "${buttonId}" 被点击。`);
+                const chatItems = await fetchCharacterLastMessagesFromLocalServer();
+                if (chatItems !== null) {
+                    showLastMessagesPopup(chatItems);
+                }
+            });
+            console.log(`[${pluginFolderName}] UI按钮 '${buttonId}' 已设置。`);
+        } else {
+            console.warn(`[${pluginFolderName}] 找不到 #data_bank_wand_container 容器。UI按钮可能不会显示。`);
         }
 
-        console.log(`[${pluginFolderName}] 插件 (client.js) 加载完成!`);
+        console.log(`[${pluginFolderName}] 前端脚本加载完成!`);
 
     } catch (error) {
-        console.error(`[${pluginFolderName}] 插件 (client.js) 初始化过程中出错:`, error);
+        console.error(`[${pluginFolderName}] 前端脚本初始化过程中出错:`, error);
     }
 });
